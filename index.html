@@ -10,157 +10,245 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 10px; box-sizing: border-box; background: #f4f4f9; }
         .container { max-width: 800px; margin: auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { text-align: center; font-size: 1.2rem; }
+        h2 { text-align: center; font-size: 1.2rem; margin-top: 0; }
         #map { height: 300px; width: 100%; margin-bottom: 15px; border-radius: 4px; z-index: 1;}
-        .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-        label { font-size: 0.85rem; font-weight: bold; }
-        input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        
+        .site-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; margin-bottom: 15px; }
+        .site-card h3 { margin: 0 0 10px 0; font-size: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .full-width { grid-column: span 2; }
-        .results { background: #eef; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: bold; text-align: center; font-size: 0.95rem;}
-        button { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
+        label { font-size: 0.8rem; font-weight: bold; color: #495057; }
+        input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem;}
+        
+        button.action-btn { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; font-weight: bold; margin-bottom: 10px;}
+        button.action-btn:hover { background: #0056b3; }
+        button.gps-btn { padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 4px; font-size: 0.8rem; cursor: pointer; }
+        
+        .results { background: #eef; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: bold; text-align: center; font-size: 0.95rem; border: 1px solid #b8daff; color: #004085;}
         
         /* AR Camera View Styles */
         #ar-view { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 1000; }
         video { width: 100%; height: 100%; object-fit: cover; }
-        .overlay-data { position: absolute; top: 20px; left: 20px; color: #0f0; font-family: monospace; font-size: 1.2rem; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 4px; text-shadow: 1px 1px 0 #000; }
-        #close-ar { position: absolute; top: 20px; right: 20px; background: red; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        
+        .overlay-data { position: absolute; top: 20px; left: 20px; color: #fff; font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; border: 1px solid #555; }
+        .overlay-data span { font-weight: bold; }
+        .val-target { color: #ffeb3b; } /* Yellow for target */
+        .val-actual { color: #00e676; } /* Green for actual */
+        
+        #close-ar { position: absolute; bottom: 30px; right: 20px; background: #dc3545; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
         
         /* Crosshair */
-        .crosshair { position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; transform: translate(-50%, -50%); transition: border-color 0.2s; }
-        .crosshair::before, .crosshair::after { content: ''; position: absolute; background: red; transition: background-color 0.2s; }
+        .crosshair { position: absolute; top: 50%; left: 50%; width: 80px; height: 80px; transform: translate(-50%, -50%); }
+        .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff1744; transition: background-color 0.2s; box-shadow: 0 0 4px rgba(0,0,0,0.5);}
         /* Vertical line */
-        .crosshair::before { top: 0; left: 29px; width: 2px; height: 60px; }
+        .crosshair::before { top: 0; left: 38px; width: 4px; height: 80px; }
         /* Horizontal line */
-        .crosshair::after { top: 29px; left: 0; width: 60px; height: 2px; }
+        .crosshair::after { top: 38px; left: 0; width: 80px; height: 4px; }
         
-        /* Success State */
-        .crosshair.aligned::before, .crosshair.aligned::after { background: #0f0; }
+        /* Success State (Turns Green) */
+        .crosshair.aligned::before, .crosshair.aligned::after { background: #00e676; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Initial Antenna Alignment</h2>
+    <h2>Antenna Alignment</h2>
     
     <div id="map"></div>
     
-    <div class="inputs">
-        <div>
-            <label>Local Elev. (AMSL + AGL in m)</label>
-            <input type="number" id="localHeight" value="100">
+    <div class="site-card">
+        <h3>Local Site <button id="btn-gps" class="gps-btn">Use GPS</button></h3>
+        <div class="inputs">
+            <div>
+                <label>Latitude</label>
+                <input type="number" id="locLat" step="any">
+            </div>
+            <div>
+                <label>Longitude</label>
+                <input type="number" id="locLon" step="any">
+            </div>
+            <div class="full-width">
+                <label>Elevation (AMSL + AGL in m)</label>
+                <input type="number" id="localHeight" value="100">
+            </div>
         </div>
-        <div>
-            <label>Remote Elev. (AMSL + AGL in m)</label>
-            <input type="number" id="remoteHeight" value="150">
+    </div>
+
+    <div class="site-card">
+        <h3>Remote Site</h3>
+        <div class="inputs">
+            <div>
+                <label>Latitude</label>
+                <input type="number" id="remLat" step="any">
+            </div>
+            <div>
+                <label>Longitude</label>
+                <input type="number" id="remLon" step="any">
+            </div>
+            <div class="full-width">
+                <label>Elevation (AMSL + AGL in m)</label>
+                <input type="number" id="remoteHeight" value="150">
+            </div>
         </div>
-        <div class="full-width">
-            <label>Error Margin (Degrees)</label>
-            <input type="number" id="errorMargin" value="1" step="0.5">
-        </div>
+    </div>
+
+    <div class="site-card">
+        <label>Alignment Error Margin (Degrees)</label>
+        <input type="number" id="errorMargin" value="1" step="0.5">
     </div>
 
     <div class="results" id="calcResults">
-        Target Bearing: --° | Distance: -- km | Target Tilt: --°
+        Target Bearing: --°<br>Distance: -- km<br>Target Tilt: --°
     </div>
 
-    <button id="btn-align">Alignment with Camera</button>
+    <button id="btn-align" class="action-btn">Align with Camera</button>
 </div>
 
 <div id="ar-view">
     <video id="camera-stream" autoplay playsinline></video>
+    
     <div class="overlay-data" id="ar-data">
-        Target B: <span id="tgt-b"></span>° | Actual B: <span id="act-b">--</span>°<br>
-        Target T: <span id="tgt-t"></span>° | Actual T: <span id="act-t">--</span>°
+        Target Bearing: <span class="val-target" id="tgt-b"></span>°<br>
+        Actual Bearing: <span class="val-actual" id="act-b">--</span>°<br>
+        <hr style="border-color: #555;">
+        Target Tilt: <span class="val-target" id="tgt-t"></span>°<br>
+        Actual Tilt: <span class="val-actual" id="act-t">--</span>°
     </div>
+    
     <div class="crosshair" id="crosshair"></div>
-    <button id="close-ar">Close</button>
+    
+    <button id="close-ar">Close Camera</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // --- MAP & CALCULATION LOGIC ---
+    // --- MAP & UI SYNC LOGIC ---
     let localMarker, remoteMarker;
     let targetBearing = 0;
     let targetTilt = 0;
+    let isUpdatingFromMap = false;
     
-    // Initialize Map
     const map = L.map('map').setView([32.17, 34.90], 10);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Set initial markers
-    localMarker = L.marker([32.17, 34.90], {draggable: true}).addTo(map).bindPopup("<b>Local Site</b><br>Drag me").openPopup();
-    remoteMarker = L.marker([32.20, 35.00], {draggable: true}).addTo(map).bindPopup("<b>Remote Site</b><br>Drag me");
+    localMarker = L.marker([32.17, 34.90], {draggable: true}).addTo(map).bindPopup("<b>Local Site</b>").openPopup();
+    remoteMarker = L.marker([32.20, 35.00], {draggable: true}).addTo(map).bindPopup("<b>Remote Site</b>");
 
-    // --- LOCAL STORAGE LOGIC ---
-    function loadSavedData() {
-        const savedData = localStorage.getItem('antennaAlignData');
-        if (savedData) {
-            try {
-                const data = JSON.parse(savedData);
-                if (data.localLat && data.localLng) localMarker.setLatLng([data.localLat, data.localLng]);
-                if (data.remoteLat && data.remoteLng) remoteMarker.setLatLng([data.remoteLat, data.remoteLng]);
-                if (data.localHeight) document.getElementById('localHeight').value = data.localHeight;
-                if (data.remoteHeight) document.getElementById('remoteHeight').value = data.remoteHeight;
-                if (data.errorMargin) document.getElementById('errorMargin').value = data.errorMargin;
-                
-                // Center map on saved local marker
-                map.setView(localMarker.getLatLng(), 12);
-                return true; // Data loaded successfully
-            } catch (e) {
-                console.error("Error parsing saved data", e);
-            }
-        }
-        return false; // No data loaded
-    }
+    // UI Elements
+    const locLatInput = document.getElementById('locLat');
+    const locLonInput = document.getElementById('locLon');
+    const remLatInput = document.getElementById('remLat');
+    const remLonInput = document.getElementById('remLon');
+    const locHeightInput = document.getElementById('localHeight');
+    const remHeightInput = document.getElementById('remoteHeight');
+    const errorMarginInput = document.getElementById('errorMargin');
 
-    function saveCurrentData() {
+    // 1. Sync Map Drags -> Input Fields
+    function syncMapToInputs() {
+        isUpdatingFromMap = true;
         const p1 = localMarker.getLatLng();
         const p2 = remoteMarker.getLatLng();
-        const data = {
-            localLat: p1.lat,
-            localLng: p1.lng,
-            remoteLat: p2.lat,
-            remoteLng: p2.lng,
-            localHeight: document.getElementById('localHeight').value,
-            remoteHeight: document.getElementById('remoteHeight').value,
-            errorMargin: document.getElementById('errorMargin').value
-        };
-        localStorage.setItem('antennaAlignData', JSON.stringify(data));
+        
+        locLatInput.value = p1.lat.toFixed(6);
+        locLonInput.value = p1.lng.toFixed(6);
+        remLatInput.value = p2.lat.toFixed(6);
+        remLonInput.value = p2.lng.toFixed(6);
+        
+        isUpdatingFromMap = false;
+        calculateAlignment();
     }
 
-    // Attempt to get user's real location ONLY if no saved data exists
-    if (!loadSavedData() && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            map.setView([lat, lon], 12);
-            localMarker.setLatLng([lat, lon]);
-            calculateAlignment();
-        });
+    localMarker.on('dragend', syncMapToInputs);
+    remoteMarker.on('dragend', syncMapToInputs);
+
+    // 2. Sync Input Fields -> Map Locations
+    function syncInputsToMap() {
+        if (isUpdatingFromMap) return;
+        
+        const locLat = parseFloat(locLatInput.value);
+        const locLon = parseFloat(locLonInput.value);
+        const remLat = parseFloat(remLatInput.value);
+        const remLon = parseFloat(remLonInput.value);
+
+        if (!isNaN(locLat) && !isNaN(locLon)) {
+            localMarker.setLatLng([locLat, locLon]);
+        }
+        if (!isNaN(remLat) && !isNaN(remLon)) {
+            remoteMarker.setLatLng([remLat, remLon]);
+        }
+        
+        calculateAlignment();
     }
 
+    [locLatInput, locLonInput, remLatInput, remLonInput].forEach(input => {
+        input.addEventListener('input', syncInputsToMap);
+    });
+
+    [locHeightInput, remHeightInput, errorMarginInput].forEach(input => {
+        input.addEventListener('input', calculateAlignment);
+    });
+
+    // --- GPS LOGIC ---
+    document.getElementById('btn-gps').addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
+        }
+        
+        const btn = document.getElementById('btn-gps');
+        btn.innerText = "Locating...";
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                const alt = position.coords.altitude; // Often null on mobile web
+
+                locLatInput.value = lat.toFixed(6);
+                locLonInput.value = lon.toFixed(6);
+                localMarker.setLatLng([lat, lon]);
+                map.setView([lat, lon], 14);
+
+                if (alt !== null) {
+                    locHeightInput.value = Math.round(alt);
+                }
+                
+                btn.innerText = "Use GPS";
+                syncInputsToMap();
+            },
+            (error) => {
+                alert("GPS Error: " + error.message);
+                btn.innerText = "Use GPS";
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    });
+
+    // --- CALCULATION LOGIC ---
     function calculateAlignment() {
         const p1 = localMarker.getLatLng();
         const p2 = remoteMarker.getLatLng();
-        const h1 = parseFloat(document.getElementById('localHeight').value) || 0;
-        const h2 = parseFloat(document.getElementById('remoteHeight').value) || 0;
+        const h1 = parseFloat(locHeightInput.value) || 0;
+        const h2 = parseFloat(remHeightInput.value) || 0;
 
-        // Save data on every calculation update
-        saveCurrentData();
+        // Save state
+        localStorage.setItem('antennaAlignData', JSON.stringify({
+            locLat: p1.lat, locLon: p1.lng, 
+            remLat: p2.lat, remLon: p2.lng,
+            locHeight: h1, remHeight: h2,
+            errorMargin: errorMarginInput.value
+        }));
 
         // Distance (Haversine)
-        const R = 6371e3; // Earth radius in meters
+        const R = 6371e3;
         const φ1 = p1.lat * Math.PI/180;
         const φ2 = p2.lat * Math.PI/180;
         const Δφ = (p2.lat-p1.lat) * Math.PI/180;
         const Δλ = (p2.lng-p1.lng) * Math.PI/180;
 
-        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                  Math.cos(φ1) * Math.cos(φ2) *
-                  Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const distanceMeters = R * c;
 
@@ -168,35 +256,40 @@
         const y = Math.sin(Δλ) * Math.cos(φ2);
         const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
         let brng = Math.atan2(y, x) * 180 / Math.PI;
-        targetBearing = (brng + 360) % 360; // Normalize to 0-360
+        targetBearing = (brng + 360) % 360;
 
-        // Tilt (Elevation Angle) with 4/3 Earth Curvature Model
+        // Tilt (4/3 Earth Curvature Model)
         const K = 4 / 3;
-        const Re = K * R; // Effective Earth Radius
-        const hc = (distanceMeters * distanceMeters) / (2 * Re); // Earth curvature drop
+        const Re = K * R;
+        const hc = (distanceMeters * distanceMeters) / (2 * Re);
         const heightDiff = (h2 - h1) - hc;
-        
         targetTilt = Math.atan2(heightDiff, distanceMeters) * 180 / Math.PI;
 
         // Update UI
         document.getElementById('calcResults').innerHTML = 
-            `Target Bearing: ${targetBearing.toFixed(1)}° | ` +
-            `Distance: ${(distanceMeters/1000).toFixed(2)} km | ` +
+            `Target Bearing: ${targetBearing.toFixed(1)}°<br>` +
+            `Distance: ${(distanceMeters/1000).toFixed(2)} km<br>` +
             `Target Tilt: ${targetTilt.toFixed(1)}°`;
             
         document.getElementById('tgt-b').innerText = targetBearing.toFixed(1);
         document.getElementById('tgt-t').innerText = targetTilt.toFixed(1);
     }
 
-    // Event Listeners for Map and Inputs
-    localMarker.on('dragend', calculateAlignment);
-    remoteMarker.on('dragend', calculateAlignment);
-    document.getElementById('localHeight').addEventListener('input', calculateAlignment);
-    document.getElementById('remoteHeight').addEventListener('input', calculateAlignment);
-    document.getElementById('errorMargin').addEventListener('input', saveCurrentData);
-    
-    // Initial Calc
-    calculateAlignment();
+    // Load saved data on startup
+    window.onload = () => {
+        const saved = localStorage.getItem('antennaAlignData');
+        if (saved) {
+            try {
+                const d = JSON.parse(saved);
+                if (d.locLat && d.locLon) { localMarker.setLatLng([d.locLat, d.locLon]); map.setView([d.locLat, d.locLon], 10); }
+                if (d.remLat && d.remLon) remoteMarker.setLatLng([d.remLat, d.remLon]);
+                if (d.locHeight) locHeightInput.value = d.locHeight;
+                if (d.remHeight) remHeightInput.value = d.remHeight;
+                if (d.errorMargin) errorMarginInput.value = d.errorMargin;
+            } catch(e){}
+        }
+        syncMapToInputs(); // Initializes inputs and triggers calculation
+    };
 
     // --- AR / CAMERA LOGIC ---
     const btnAlign = document.getElementById('btn-align');
@@ -218,12 +311,10 @@
             const track = stream.getVideoTracks()[0];
             const capabilities = track.getCapabilities();
             if (capabilities.zoom) {
-                await track.applyConstraints({
-                    advanced: [{ zoom: capabilities.zoom.max }]
-                });
+                await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.max }] });
             }
         } catch (err) {
-            alert("Camera access failed: " + err.message + "\nEnsure you are using HTTPS.");
+            alert("Camera access failed. Ensure you are using HTTPS.\n" + err.message);
         }
 
         requestOrientationPermission();
@@ -231,9 +322,7 @@
 
     closeAr.addEventListener('click', () => {
         arView.style.display = 'none';
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
+        if (stream) { stream.getTracks().forEach(track => track.stop()); }
         window.removeEventListener('deviceorientation', handleOrientation);
         window.removeEventListener('deviceorientationabsolute', handleOrientation);
     });
@@ -271,12 +360,13 @@
         document.getElementById('act-b').innerText = actualBearing.toFixed(1);
         document.getElementById('act-t').innerText = actualTilt.toFixed(1);
 
-        const errorMargin = parseFloat(document.getElementById('errorMargin').value) || 1;
+        const errorMargin = parseFloat(errorMarginInput.value) || 1;
         
         let bearingDiff = Math.abs(actualBearing - targetBearing);
         bearingDiff = bearingDiff > 180 ? 360 - bearingDiff : bearingDiff;
         let tiltDiff = Math.abs(actualTilt - targetTilt);
 
+        // Turn cursor green if within margin
         if (bearingDiff <= errorMargin && tiltDiff <= errorMargin) {
             crosshair.classList.add('aligned');
         } else {
