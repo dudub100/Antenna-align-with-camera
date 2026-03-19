@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Antenna Alignment Tool</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -32,20 +32,32 @@
         
         .overlay-data { position: absolute; top: 20px; left: 20px; color: #fff; font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; border: 1px solid #555; }
         .overlay-data span { font-weight: bold; }
-        .val-target { color: #ffeb3b; } /* Yellow for target */
-        .val-actual { color: #00e676; } /* Green for actual */
+        .val-target { color: #ffeb3b; } 
+        .val-actual { color: #00e676; } 
         
-        #close-ar { position: absolute; bottom: 30px; right: 20px; background: #dc3545; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+        /* Fixed Close Button: Centered, lifted above the safe area */
+        #close-ar { 
+            position: absolute; 
+            bottom: calc(40px + env(safe-area-inset-bottom, 20px)); 
+            left: 50%; 
+            transform: translateX(-50%); 
+            background: #dc3545; 
+            color: white; 
+            border: none; 
+            padding: 15px 40px; 
+            border-radius: 30px; 
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            cursor: pointer; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
         
         /* Crosshair */
         .crosshair { position: absolute; top: 50%; left: 50%; width: 80px; height: 80px; transform: translate(-50%, -50%); }
         .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff1744; transition: background-color 0.2s; box-shadow: 0 0 4px rgba(0,0,0,0.5);}
-        /* Vertical line */
         .crosshair::before { top: 0; left: 38px; width: 4px; height: 80px; }
-        /* Horizontal line */
         .crosshair::after { top: 38px; left: 0; width: 80px; height: 4px; }
         
-        /* Success State (Turns Green) */
         .crosshair.aligned::before, .crosshair.aligned::after { background: #00e676; }
     </style>
 </head>
@@ -136,7 +148,6 @@
     localMarker = L.marker([32.17, 34.90], {draggable: true}).addTo(map).bindPopup("<b>Local Site</b>").openPopup();
     remoteMarker = L.marker([32.20, 35.00], {draggable: true}).addTo(map).bindPopup("<b>Remote Site</b>");
 
-    // UI Elements
     const locLatInput = document.getElementById('locLat');
     const locLonInput = document.getElementById('locLon');
     const remLatInput = document.getElementById('remLat');
@@ -145,7 +156,6 @@
     const remHeightInput = document.getElementById('remoteHeight');
     const errorMarginInput = document.getElementById('errorMargin');
 
-    // 1. Sync Map Drags -> Input Fields
     function syncMapToInputs() {
         isUpdatingFromMap = true;
         const p1 = localMarker.getLatLng();
@@ -163,132 +173,81 @@
     localMarker.on('dragend', syncMapToInputs);
     remoteMarker.on('dragend', syncMapToInputs);
 
-    // 2. Sync Input Fields -> Map Locations
     function syncInputsToMap() {
         if (isUpdatingFromMap) return;
-        
-        const locLat = parseFloat(locLatInput.value);
-        const locLon = parseFloat(locLonInput.value);
-        const remLat = parseFloat(remLatInput.value);
-        const remLon = parseFloat(remLonInput.value);
+        const locLat = parseFloat(locLatInput.value); const locLon = parseFloat(locLonInput.value);
+        const remLat = parseFloat(remLatInput.value); const remLon = parseFloat(remLonInput.value);
 
-        if (!isNaN(locLat) && !isNaN(locLon)) {
-            localMarker.setLatLng([locLat, locLon]);
-        }
-        if (!isNaN(remLat) && !isNaN(remLon)) {
-            remoteMarker.setLatLng([remLat, remLon]);
-        }
-        
+        if (!isNaN(locLat) && !isNaN(locLon)) localMarker.setLatLng([locLat, locLon]);
+        if (!isNaN(remLat) && !isNaN(remLon)) remoteMarker.setLatLng([remLat, remLon]);
         calculateAlignment();
     }
 
-    [locLatInput, locLonInput, remLatInput, remLonInput].forEach(input => {
-        input.addEventListener('input', syncInputsToMap);
-    });
-
-    [locHeightInput, remHeightInput, errorMarginInput].forEach(input => {
-        input.addEventListener('input', calculateAlignment);
-    });
+    [locLatInput, locLonInput, remLatInput, remLonInput].forEach(input => input.addEventListener('input', syncInputsToMap));
+    [locHeightInput, remHeightInput, errorMarginInput].forEach(input => input.addEventListener('input', calculateAlignment));
 
     // --- GPS LOGIC ---
     document.getElementById('btn-gps').addEventListener('click', () => {
-        if (!navigator.geolocation) {
-            alert("Geolocation is not supported by your browser.");
-            return;
-        }
-        
+        if (!navigator.geolocation) { alert("Geolocation not supported."); return; }
         const btn = document.getElementById('btn-gps');
         btn.innerText = "Locating...";
         
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                const lat = position.coords.latitude;
-                const lon = position.coords.longitude;
-                const alt = position.coords.altitude; // Often null on mobile web
-
-                locLatInput.value = lat.toFixed(6);
-                locLonInput.value = lon.toFixed(6);
-                localMarker.setLatLng([lat, lon]);
-                map.setView([lat, lon], 14);
-
-                if (alt !== null) {
-                    locHeightInput.value = Math.round(alt);
-                }
-                
-                btn.innerText = "Use GPS";
-                syncInputsToMap();
+                const lat = position.coords.latitude; const lon = position.coords.longitude;
+                locLatInput.value = lat.toFixed(6); locLonInput.value = lon.toFixed(6);
+                localMarker.setLatLng([lat, lon]); map.setView([lat, lon], 14);
+                if (position.coords.altitude !== null) locHeightInput.value = Math.round(position.coords.altitude);
+                btn.innerText = "Use GPS"; syncInputsToMap();
             },
-            (error) => {
-                alert("GPS Error: " + error.message);
-                btn.innerText = "Use GPS";
-            },
+            (error) => { alert("GPS Error: " + error.message); btn.innerText = "Use GPS"; },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
     });
 
     // --- CALCULATION LOGIC ---
     function calculateAlignment() {
-        const p1 = localMarker.getLatLng();
-        const p2 = remoteMarker.getLatLng();
-        const h1 = parseFloat(locHeightInput.value) || 0;
-        const h2 = parseFloat(remHeightInput.value) || 0;
+        const p1 = localMarker.getLatLng(); const p2 = remoteMarker.getLatLng();
+        const h1 = parseFloat(locHeightInput.value) || 0; const h2 = parseFloat(remHeightInput.value) || 0;
 
-        // Save state
         localStorage.setItem('antennaAlignData', JSON.stringify({
-            locLat: p1.lat, locLon: p1.lng, 
-            remLat: p2.lat, remLon: p2.lng,
-            locHeight: h1, remHeight: h2,
-            errorMargin: errorMarginInput.value
+            locLat: p1.lat, locLon: p1.lng, remLat: p2.lat, remLon: p2.lng,
+            locHeight: h1, remHeight: h2, errorMargin: errorMarginInput.value
         }));
 
-        // Distance (Haversine)
         const R = 6371e3;
-        const φ1 = p1.lat * Math.PI/180;
-        const φ2 = p2.lat * Math.PI/180;
-        const Δφ = (p2.lat-p1.lat) * Math.PI/180;
-        const Δλ = (p2.lng-p1.lng) * Math.PI/180;
+        const φ1 = p1.lat * Math.PI/180; const φ2 = p2.lat * Math.PI/180;
+        const Δφ = (p2.lat-p1.lat) * Math.PI/180; const Δλ = (p2.lng-p1.lng) * Math.PI/180;
 
         const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const distanceMeters = R * c;
 
-        // Bearing (Forward Azimuth)
         const y = Math.sin(Δλ) * Math.cos(φ2);
         const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-        let brng = Math.atan2(y, x) * 180 / Math.PI;
-        targetBearing = (brng + 360) % 360;
+        targetBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
-        // Tilt (4/3 Earth Curvature Model)
-        const K = 4 / 3;
-        const Re = K * R;
+        const K = 4 / 3; const Re = K * R;
         const hc = (distanceMeters * distanceMeters) / (2 * Re);
-        const heightDiff = (h2 - h1) - hc;
-        targetTilt = Math.atan2(heightDiff, distanceMeters) * 180 / Math.PI;
+        targetTilt = Math.atan2((h2 - h1) - hc, distanceMeters) * 180 / Math.PI;
 
-        // Update UI
-        document.getElementById('calcResults').innerHTML = 
-            `Target Bearing: ${targetBearing.toFixed(1)}°<br>` +
-            `Distance: ${(distanceMeters/1000).toFixed(2)} km<br>` +
-            `Target Tilt: ${targetTilt.toFixed(1)}°`;
-            
+        document.getElementById('calcResults').innerHTML = `Target Bearing: ${targetBearing.toFixed(1)}°<br>Distance: ${(distanceMeters/1000).toFixed(2)} km<br>Target Tilt: ${targetTilt.toFixed(1)}°`;
         document.getElementById('tgt-b').innerText = targetBearing.toFixed(1);
         document.getElementById('tgt-t').innerText = targetTilt.toFixed(1);
     }
 
-    // Load saved data on startup
     window.onload = () => {
-        const saved = localStorage.getItem('antennaAlignData');
-        if (saved) {
-            try {
-                const d = JSON.parse(saved);
-                if (d.locLat && d.locLon) { localMarker.setLatLng([d.locLat, d.locLon]); map.setView([d.locLat, d.locLon], 10); }
-                if (d.remLat && d.remLon) remoteMarker.setLatLng([d.remLat, d.remLon]);
-                if (d.locHeight) locHeightInput.value = d.locHeight;
-                if (d.remHeight) remHeightInput.value = d.remHeight;
-                if (d.errorMargin) errorMarginInput.value = d.errorMargin;
-            } catch(e){}
-        }
-        syncMapToInputs(); // Initializes inputs and triggers calculation
+        try {
+            const saved = JSON.parse(localStorage.getItem('antennaAlignData'));
+            if (saved) {
+                if (saved.locLat) { localMarker.setLatLng([saved.locLat, saved.locLon]); map.setView([saved.locLat, saved.locLon], 10); }
+                if (saved.remLat) remoteMarker.setLatLng([saved.remLat, saved.remLon]);
+                if (saved.locHeight) locHeightInput.value = saved.locHeight;
+                if (saved.remHeight) remHeightInput.value = saved.remHeight;
+                if (saved.errorMargin) errorMarginInput.value = saved.errorMargin;
+            }
+        } catch(e){}
+        syncMapToInputs();
     };
 
     // --- AR / CAMERA LOGIC ---
@@ -301,60 +260,60 @@
 
     btnAlign.addEventListener('click', async () => {
         arView.style.display = 'block';
-        
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" }
-            });
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             video.srcObject = stream;
-            
             const track = stream.getVideoTracks()[0];
-            const capabilities = track.getCapabilities();
-            if (capabilities.zoom) {
-                await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.max }] });
-            }
-        } catch (err) {
-            alert("Camera access failed. Ensure you are using HTTPS.\n" + err.message);
-        }
-
+            if (track.getCapabilities().zoom) await track.applyConstraints({ advanced: [{ zoom: track.getCapabilities().zoom.max }] });
+        } catch (err) { alert("Camera error (ensure HTTPS): " + err.message); }
         requestOrientationPermission();
     });
 
     closeAr.addEventListener('click', () => {
         arView.style.display = 'none';
-        if (stream) { stream.getTracks().forEach(track => track.stop()); }
+        if (stream) stream.getTracks().forEach(t => t.stop());
         window.removeEventListener('deviceorientation', handleOrientation);
         window.removeEventListener('deviceorientationabsolute', handleOrientation);
     });
 
     function requestOrientationPermission() {
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            DeviceOrientationEvent.requestPermission()
-                .then(permissionState => {
-                    if (permissionState === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation, true);
-                    } else {
-                        alert("Orientation permission denied.");
-                    }
-                })
-                .catch(console.error);
+            DeviceOrientationEvent.requestPermission().then(state => {
+                if (state === 'granted') window.addEventListener('deviceorientation', handleOrientation, true);
+            }).catch(console.error);
         } else {
             window.addEventListener('deviceorientationabsolute', handleOrientation, true);
         }
     }
 
+    // Normalizes screen rotation angle (0 = Portrait, 90 = Landscape Left, 270 = Landscape Right)
+    function getScreenAngle() {
+        let angle = (screen.orientation || {}).angle || window.orientation || 0;
+        return (angle + 360) % 360; 
+    }
+
     function handleOrientation(event) {
         let actualBearing = 0;
         let actualTilt = 0;
+        let angle = getScreenAngle();
 
-        if (event.webkitCompassHeading) {
-            actualBearing = event.webkitCompassHeading;
-        } else if (event.alpha != null) {
-            actualBearing = 360 - event.alpha; 
-        }
+        // 1. Get Base Heading (direction the TOP of the device is pointing)
+        let heading = event.webkitCompassHeading;
+        if (heading == null && event.alpha != null) heading = 360 - event.alpha;
+        if (heading == null) return;
 
-        if (event.beta != null) {
-            actualTilt = event.beta - 90; 
+        // 2. Adjust Bearing based on screen rotation so it matches the camera lens
+        actualBearing = (heading - angle + 360) % 360;
+
+        // 3. Adjust Tilt based on screen rotation so Positive = Pointing UP
+        if (angle === 0) { // Portrait
+            actualTilt = 90 - event.beta;
+        } else if (angle === 90) { // Landscape Left
+            actualTilt = event.gamma + 90;
+        } else if (angle === 270 || angle === -90) { // Landscape Right
+            actualTilt = 90 - event.gamma;
+        } else if (angle === 180) { // Portrait Upside Down
+            actualTilt = event.beta - 90;
         }
 
         document.getElementById('act-b').innerText = actualBearing.toFixed(1);
@@ -362,11 +321,11 @@
 
         const errorMargin = parseFloat(errorMarginInput.value) || 1;
         
+        // Handle compass wrap-around logic
         let bearingDiff = Math.abs(actualBearing - targetBearing);
         bearingDiff = bearingDiff > 180 ? 360 - bearingDiff : bearingDiff;
         let tiltDiff = Math.abs(actualTilt - targetTilt);
 
-        // Turn cursor green if within margin
         if (bearingDiff <= errorMargin && tiltDiff <= errorMargin) {
             crosshair.classList.add('aligned');
         } else {
