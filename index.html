@@ -30,25 +30,27 @@
         #ar-view { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 1000; }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        .overlay-data { position: absolute; top: 20px; left: 20px; color: #fff; font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; border: 1px solid #555; }
+        .overlay-data { position: absolute; top: calc(20px + env(safe-area-inset-top, 0px)); left: 20px; color: #fff; font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 8px; border: 1px solid #555; }
         .overlay-data span { font-weight: bold; }
         .val-target { color: #ffeb3b; } 
         .val-actual { color: #00e676; } 
+
+        #debug-panel { position: absolute; bottom: 20px; left: 20px; color: #0ff; font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; border: 1px solid #0ff; text-align: left;}
         
+        /* MOVED TO TOP RIGHT */
         #close-ar { 
             position: absolute; 
-            bottom: calc(40px + env(safe-area-inset-bottom, 20px)); 
-            left: 50%; 
-            transform: translateX(-50%); 
+            top: calc(20px + env(safe-area-inset-top, 0px)); 
+            right: calc(20px + env(safe-area-inset-right, 0px)); 
             background: #dc3545; 
             color: white; 
             border: none; 
-            padding: 15px 40px; 
-            border-radius: 30px; 
-            font-size: 1.1rem; 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            font-size: 1rem; 
             font-weight: bold; 
             cursor: pointer; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
         }
         
         .crosshair { position: absolute; top: 50%; left: 50%; width: 80px; height: 80px; transform: translate(-50%, -50%); }
@@ -69,36 +71,18 @@
     <div class="site-card">
         <h3>Local Site <button id="btn-gps" class="gps-btn">Use GPS</button></h3>
         <div class="inputs">
-            <div>
-                <label>Latitude</label>
-                <input type="number" id="locLat" step="any">
-            </div>
-            <div>
-                <label>Longitude</label>
-                <input type="number" id="locLon" step="any">
-            </div>
-            <div class="full-width">
-                <label>Elevation (AMSL + AGL in m)</label>
-                <input type="number" id="localHeight" value="100">
-            </div>
+            <div><label>Latitude</label><input type="number" id="locLat" step="any"></div>
+            <div><label>Longitude</label><input type="number" id="locLon" step="any"></div>
+            <div class="full-width"><label>Elevation (AMSL + AGL in m)</label><input type="number" id="localHeight" value="100"></div>
         </div>
     </div>
 
     <div class="site-card">
         <h3>Remote Site</h3>
         <div class="inputs">
-            <div>
-                <label>Latitude</label>
-                <input type="number" id="remLat" step="any">
-            </div>
-            <div>
-                <label>Longitude</label>
-                <input type="number" id="remLon" step="any">
-            </div>
-            <div class="full-width">
-                <label>Elevation (AMSL + AGL in m)</label>
-                <input type="number" id="remoteHeight" value="150">
-            </div>
+            <div><label>Latitude</label><input type="number" id="remLat" step="any"></div>
+            <div><label>Longitude</label><input type="number" id="remLon" step="any"></div>
+            <div class="full-width"><label>Elevation (AMSL + AGL in m)</label><input type="number" id="remoteHeight" value="150"></div>
         </div>
     </div>
 
@@ -124,209 +108,176 @@
         Target Tilt: <span class="val-target" id="tgt-t"></span>°<br>
         Actual Tilt: <span class="val-actual" id="act-t">--</span>°
     </div>
+
+    <div id="debug-panel">
+        RAW Head: <span id="dbg-head">0</span>°<br>
+        RAW Beta: <span id="dbg-beta">0</span>°<br>
+        RAW Gamma: <span id="dbg-gamma">0</span>°<br>
+        Screen Angle: <span id="dbg-angle">0</span>°
+    </div>
     
     <div class="crosshair" id="crosshair"></div>
     
-    <button id="close-ar">Close Camera</button>
+    <button id="close-ar">Close</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     // --- MAP & UI SYNC LOGIC ---
-    let localMarker, remoteMarker;
-    let targetBearing = 0;
-    let targetTilt = 0;
-    let isUpdatingFromMap = false;
+    let localMarker, remoteMarker, targetBearing = 0, targetTilt = 0, isUpdatingFromMap = false;
     
     const map = L.map('map').setView([32.17, 34.90], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '© OpenStreetMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
     localMarker = L.marker([32.17, 34.90], {draggable: true}).addTo(map).bindPopup("<b>Local Site</b>").openPopup();
     remoteMarker = L.marker([32.20, 35.00], {draggable: true}).addTo(map).bindPopup("<b>Remote Site</b>");
 
-    const locLatInput = document.getElementById('locLat');
-    const locLonInput = document.getElementById('locLon');
-    const remLatInput = document.getElementById('remLat');
-    const remLonInput = document.getElementById('remLon');
-    const locHeightInput = document.getElementById('localHeight');
-    const remHeightInput = document.getElementById('remoteHeight');
+    const locLatInput = document.getElementById('locLat'), locLonInput = document.getElementById('locLon');
+    const remLatInput = document.getElementById('remLat'), remLonInput = document.getElementById('remLon');
+    const locHeightInput = document.getElementById('localHeight'), remHeightInput = document.getElementById('remoteHeight');
     const errorMarginInput = document.getElementById('errorMargin');
 
     function syncMapToInputs() {
         isUpdatingFromMap = true;
-        const p1 = localMarker.getLatLng();
-        const p2 = remoteMarker.getLatLng();
-        
-        locLatInput.value = p1.lat.toFixed(6);
-        locLonInput.value = p1.lng.toFixed(6);
-        remLatInput.value = p2.lat.toFixed(6);
-        remLonInput.value = p2.lng.toFixed(6);
-        
-        isUpdatingFromMap = false;
-        calculateAlignment();
+        locLatInput.value = localMarker.getLatLng().lat.toFixed(6); locLonInput.value = localMarker.getLatLng().lng.toFixed(6);
+        remLatInput.value = remoteMarker.getLatLng().lat.toFixed(6); remLonInput.value = remoteMarker.getLatLng().lng.toFixed(6);
+        isUpdatingFromMap = false; calculateAlignment();
     }
 
-    localMarker.on('dragend', syncMapToInputs);
-    remoteMarker.on('dragend', syncMapToInputs);
+    localMarker.on('dragend', syncMapToInputs); remoteMarker.on('dragend', syncMapToInputs);
 
     function syncInputsToMap() {
         if (isUpdatingFromMap) return;
-        const locLat = parseFloat(locLatInput.value); const locLon = parseFloat(locLonInput.value);
-        const remLat = parseFloat(remLatInput.value); const remLon = parseFloat(remLonInput.value);
-
-        if (!isNaN(locLat) && !isNaN(locLon)) localMarker.setLatLng([locLat, locLon]);
-        if (!isNaN(remLat) && !isNaN(remLon)) remoteMarker.setLatLng([remLat, remLon]);
+        const lat1 = parseFloat(locLatInput.value), lon1 = parseFloat(locLonInput.value);
+        const lat2 = parseFloat(remLatInput.value), lon2 = parseFloat(remLonInput.value);
+        if (!isNaN(lat1) && !isNaN(lon1)) localMarker.setLatLng([lat1, lon1]);
+        if (!isNaN(lat2) && !isNaN(lon2)) remoteMarker.setLatLng([lat2, lon2]);
         calculateAlignment();
     }
 
-    [locLatInput, locLonInput, remLatInput, remLonInput].forEach(input => input.addEventListener('input', syncInputsToMap));
-    [locHeightInput, remHeightInput, errorMarginInput].forEach(input => input.addEventListener('input', calculateAlignment));
+    [locLatInput, locLonInput, remLatInput, remLonInput].forEach(i => i.addEventListener('input', syncInputsToMap));
+    [locHeightInput, remHeightInput, errorMarginInput].forEach(i => i.addEventListener('input', calculateAlignment));
 
-    // --- GPS LOGIC ---
     document.getElementById('btn-gps').addEventListener('click', () => {
-        if (!navigator.geolocation) { alert("Geolocation not supported."); return; }
-        const btn = document.getElementById('btn-gps');
-        btn.innerText = "Locating...";
-        
+        if (!navigator.geolocation) return alert("Geolocation not supported.");
+        const btn = document.getElementById('btn-gps'); btn.innerText = "Locating...";
         navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude; const lon = position.coords.longitude;
-                locLatInput.value = lat.toFixed(6); locLonInput.value = lon.toFixed(6);
-                localMarker.setLatLng([lat, lon]); map.setView([lat, lon], 14);
-                if (position.coords.altitude !== null) locHeightInput.value = Math.round(position.coords.altitude);
+            (pos) => {
+                locLatInput.value = pos.coords.latitude.toFixed(6); locLonInput.value = pos.coords.longitude.toFixed(6);
+                localMarker.setLatLng([pos.coords.latitude, pos.coords.longitude]); map.setView([pos.coords.latitude, pos.coords.longitude], 14);
+                if (pos.coords.altitude !== null) locHeightInput.value = Math.round(pos.coords.altitude);
                 btn.innerText = "Use GPS"; syncInputsToMap();
             },
-            (error) => { alert("GPS Error: " + error.message); btn.innerText = "Use GPS"; },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            (err) => { alert("GPS Error: " + err.message); btn.innerText = "Use GPS"; }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
     });
 
-    // --- CALCULATION LOGIC ---
     function calculateAlignment() {
-        const p1 = localMarker.getLatLng(); const p2 = remoteMarker.getLatLng();
-        const h1 = parseFloat(locHeightInput.value) || 0; const h2 = parseFloat(remHeightInput.value) || 0;
+        const p1 = localMarker.getLatLng(), p2 = remoteMarker.getLatLng();
+        const h1 = parseFloat(locHeightInput.value) || 0, h2 = parseFloat(remHeightInput.value) || 0;
 
-        localStorage.setItem('antennaAlignData', JSON.stringify({
-            locLat: p1.lat, locLon: p1.lng, remLat: p2.lat, remLon: p2.lng,
-            locHeight: h1, remHeight: h2, errorMargin: errorMarginInput.value
-        }));
+        localStorage.setItem('antennaAlignData', JSON.stringify({ locLat: p1.lat, locLon: p1.lng, remLat: p2.lat, remLon: p2.lng, locHeight: h1, remHeight: h2, errorMargin: errorMarginInput.value }));
 
-        const R = 6371e3;
-        const φ1 = p1.lat * Math.PI/180; const φ2 = p2.lat * Math.PI/180;
-        const Δφ = (p2.lat-p1.lat) * Math.PI/180; const Δλ = (p2.lng-p1.lng) * Math.PI/180;
-
+        const R = 6371e3, φ1 = p1.lat * Math.PI/180, φ2 = p2.lat * Math.PI/180;
+        const Δφ = (p2.lat-p1.lat) * Math.PI/180, Δλ = (p2.lng-p1.lng) * Math.PI/180;
         const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const distanceMeters = R * c;
+        const distanceMeters = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 
-        const y = Math.sin(Δλ) * Math.cos(φ2);
-        const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+        const y = Math.sin(Δλ) * Math.cos(φ2), x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
         targetBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
-        const K = 4 / 3; const Re = K * R;
-        const hc = (distanceMeters * distanceMeters) / (2 * Re);
-        targetTilt = Math.atan2((h2 - h1) - hc, distanceMeters) * 180 / Math.PI;
+        const Re = (4/3) * R;
+        targetTilt = Math.atan2((h2 - h1) - ((distanceMeters * distanceMeters) / (2 * Re)), distanceMeters) * 180 / Math.PI;
 
         document.getElementById('calcResults').innerHTML = `Target Bearing: ${targetBearing.toFixed(1)}°<br>Distance: ${(distanceMeters/1000).toFixed(2)} km<br>Target Tilt: ${targetTilt.toFixed(1)}°`;
-        document.getElementById('tgt-b').innerText = targetBearing.toFixed(1);
-        document.getElementById('tgt-t').innerText = targetTilt.toFixed(1);
+        document.getElementById('tgt-b').innerText = targetBearing.toFixed(1); document.getElementById('tgt-t').innerText = targetTilt.toFixed(1);
     }
 
     window.onload = () => {
-        try {
-            const saved = JSON.parse(localStorage.getItem('antennaAlignData'));
-            if (saved) {
-                if (saved.locLat) { localMarker.setLatLng([saved.locLat, saved.locLon]); map.setView([saved.locLat, saved.locLon], 10); }
-                if (saved.remLat) remoteMarker.setLatLng([saved.remLat, saved.remLon]);
-                if (saved.locHeight) locHeightInput.value = saved.locHeight;
-                if (saved.remHeight) remHeightInput.value = saved.remHeight;
-                if (saved.errorMargin) errorMarginInput.value = saved.errorMargin;
-            }
-        } catch(e){}
-        syncMapToInputs();
+        try { const d = JSON.parse(localStorage.getItem('antennaAlignData'));
+            if (d) { if(d.locLat){localMarker.setLatLng([d.locLat, d.locLon]); map.setView([d.locLat, d.locLon], 10);}
+                if(d.remLat)remoteMarker.setLatLng([d.remLat, d.remLon]); if(d.locHeight)locHeightInput.value = d.locHeight;
+                if(d.remHeight)remHeightInput.value = d.remHeight; if(d.errorMargin)errorMarginInput.value = d.errorMargin; }
+        } catch(e){} syncMapToInputs();
     };
 
     // --- AR / CAMERA LOGIC ---
-    const btnAlign = document.getElementById('btn-align');
-    const arView = document.getElementById('ar-view');
-    const closeAr = document.getElementById('close-ar');
-    const video = document.getElementById('camera-stream');
-    const crosshair = document.getElementById('crosshair');
+    const btnAlign = document.getElementById('btn-align'), arView = document.getElementById('ar-view'), closeAr = document.getElementById('close-ar'), video = document.getElementById('camera-stream'), crosshair = document.getElementById('crosshair');
     let stream = null;
 
     btnAlign.addEventListener('click', async () => {
         arView.style.display = 'block';
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            video.srcObject = stream;
-            const track = stream.getVideoTracks()[0];
-            if (track.getCapabilities().zoom) await track.applyConstraints({ advanced: [{ zoom: track.getCapabilities().zoom.max }] });
-        } catch (err) { alert("Camera error (ensure HTTPS): " + err.message); }
+        
         requestOrientationPermission();
+
+        try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); video.srcObject = stream;
+            const t = stream.getVideoTracks()[0]; if (t.getCapabilities().zoom) await t.applyConstraints({ advanced: [{ zoom: t.getCapabilities().zoom.max }] });
+        } catch (err) { alert("Camera error: " + err.message); }
     });
 
     closeAr.addEventListener('click', () => {
-        arView.style.display = 'none';
-        if (stream) stream.getTracks().forEach(t => t.stop());
-        window.removeEventListener('deviceorientation', handleOrientation);
-        window.removeEventListener('deviceorientationabsolute', handleOrientation);
+        arView.style.display = 'none'; if (stream) stream.getTracks().forEach(t => t.stop());
+        window.removeEventListener('deviceorientation', handleOrientation); window.removeEventListener('deviceorientationabsolute', handleOrientation);
     });
 
     function requestOrientationPermission() {
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            DeviceOrientationEvent.requestPermission().then(state => {
-                if (state === 'granted') window.addEventListener('deviceorientation', handleOrientation, true);
+            DeviceOrientationEvent.requestPermission().then(state => { 
+                if (state === 'granted') {
+                    window.addEventListener('deviceorientation', handleOrientation, true); 
+                } else {
+                    alert("Orientation permission denied. Please allow it in settings.");
+                }
             }).catch(console.error);
-        } else {
-            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+        } else { 
+            window.addEventListener('deviceorientationabsolute', handleOrientation, true); 
+            window.addEventListener('deviceorientation', handleOrientation, true); 
         }
     }
 
     function getScreenAngle() {
-        let angle = (screen.orientation || {}).angle || window.orientation || 0;
+        let angle = 0;
+        if (screen.orientation && typeof screen.orientation.angle === 'number') { angle = screen.orientation.angle; } 
+        else if (typeof window.orientation === 'number') { angle = window.orientation; }
         return (angle + 360) % 360; 
     }
 
     function handleOrientation(event) {
-        let actualBearing = 0;
-        let actualTilt = 0;
         let angle = getScreenAngle();
-
-        // 1. Get Base Heading
+        let actualBearing = 0, actualTilt = 0;
+        
         let heading = event.webkitCompassHeading;
         if (heading == null && event.alpha != null) heading = 360 - event.alpha;
+        let beta = event.beta || 0;
+        let gamma = event.gamma || 0;
+
+        document.getElementById('dbg-head').innerText = (heading || 0).toFixed(1);
+        document.getElementById('dbg-beta').innerText = beta.toFixed(1);
+        document.getElementById('dbg-gamma').innerText = gamma.toFixed(1);
+        document.getElementById('dbg-angle').innerText = angle;
+
         if (heading == null) return;
 
-        // 2. Adjust Bearing (Fixed 180 deg offset by adding angle instead of subtracting)
         actualBearing = (heading + angle + 360) % 360;
 
-        // 3. Adjust Tilt (Fixed 90 deg offset in landscape modes)
         if (angle === 0) { // Portrait
-            actualTilt = 90 - event.beta;
+            actualTilt = 90 - beta;
         } else if (angle === 90) { // Landscape Left
-            actualTilt = 90 - event.gamma;
+            actualTilt = gamma + 90; 
         } else if (angle === 270 || angle === -90) { // Landscape Right
-            actualTilt = event.gamma + 90;
+            actualTilt = 90 - gamma; 
         } else if (angle === 180) { // Portrait Upside Down
-            actualTilt = event.beta + 90;
+            actualTilt = beta + 90;
         }
 
         document.getElementById('act-b').innerText = actualBearing.toFixed(1);
         document.getElementById('act-t').innerText = actualTilt.toFixed(1);
 
-        const errorMargin = parseFloat(errorMarginInput.value) || 1;
-        
-        let bearingDiff = Math.abs(actualBearing - targetBearing);
-        bearingDiff = bearingDiff > 180 ? 360 - bearingDiff : bearingDiff;
-        let tiltDiff = Math.abs(actualTilt - targetTilt);
+        const margin = parseFloat(errorMarginInput.value) || 1;
+        let bDiff = Math.abs(actualBearing - targetBearing); bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
+        let tDiff = Math.abs(actualTilt - targetTilt);
 
-        if (bearingDiff <= errorMargin && tiltDiff <= errorMargin) {
-            crosshair.classList.add('aligned');
-        } else {
-            crosshair.classList.remove('aligned');
-        }
+        if (bDiff <= margin && tDiff <= margin) crosshair.classList.add('aligned'); else crosshair.classList.remove('aligned');
     }
 </script>
 
