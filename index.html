@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Antenna Alignment Tool</title>
+    <title>Antenna Alignment Tool (3D Spatial)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -23,11 +23,8 @@
         button.action-btn { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; font-weight: bold; margin-bottom: 10px;}
         button.action-btn:hover { background: #0056b3; }
         button.gps-btn { padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 4px; font-size: 0.8rem; cursor: pointer; }
-        
-        /* New Share Button Styles */
         button.share-btn { width: 100%; padding: 10px; background: #17a2b8; color: white; border: none; border-radius: 4px; font-size: 0.9rem; cursor: pointer; font-weight: bold; margin-top: 10px;}
-        button.share-btn:hover { background: #138496; }
-
+        
         .results { background: #eef; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-weight: bold; text-align: center; font-size: 0.95rem; border: 1px solid #b8daff; color: #004085;}
         
         /* AR Camera View Styles */
@@ -64,6 +61,7 @@
             <div><label>Latitude</label><input type="number" id="locLat" step="any"></div>
             <div><label>Longitude</label><input type="number" id="locLon" step="any"></div>
             <div class="full-width"><label>Elevation (AMSL + AGL in m)</label><input type="number" id="localHeight" value="100"></div>
+            <div class="full-width"><label>Magnetic Declination (°)</label><input type="number" id="magDec" value="6.0" step="0.1"></div>
         </div>
         <button id="btn-share" class="share-btn">Share My Location with Remote Site</button>
     </div>
@@ -101,10 +99,7 @@
     </div>
 
     <div id="debug-panel">
-        RAW Head: <span id="dbg-head">0</span>°<br>
-        RAW Beta: <span id="dbg-beta">0</span>°<br>
-        RAW Gamma: <span id="dbg-gamma">0</span>°<br>
-        Screen Angle: <span id="dbg-angle">0</span>°
+        Camera Calibrated: <span id="dbg-cal">No (Hold Flat)</span>
     </div>
     
     <div class="crosshair" id="crosshair"></div>
@@ -126,7 +121,7 @@
     const locLatInput = document.getElementById('locLat'), locLonInput = document.getElementById('locLon');
     const remLatInput = document.getElementById('remLat'), remLonInput = document.getElementById('remLon');
     const locHeightInput = document.getElementById('localHeight'), remHeightInput = document.getElementById('remoteHeight');
-    const errorMarginInput = document.getElementById('errorMargin');
+    const magDecInput = document.getElementById('magDec'), errorMarginInput = document.getElementById('errorMargin');
 
     function syncMapToInputs() {
         isUpdatingFromMap = true;
@@ -147,7 +142,7 @@
     }
 
     [locLatInput, locLonInput, remLatInput, remLonInput].forEach(i => i.addEventListener('input', syncInputsToMap));
-    [locHeightInput, remHeightInput, errorMarginInput].forEach(i => i.addEventListener('input', calculateAlignment));
+    [locHeightInput, remHeightInput, errorMarginInput, magDecInput].forEach(i => i.addEventListener('input', calculateAlignment));
 
     document.getElementById('btn-gps').addEventListener('click', () => {
         if (!navigator.geolocation) return alert("Geolocation not supported.");
@@ -163,65 +158,32 @@
         );
     });
 
-    // --- SHARE LOGIC ---
     document.getElementById('btn-share').addEventListener('click', async () => {
-        const lat = locLatInput.value;
-        const lon = locLonInput.value;
-        const h = locHeightInput.value;
-
+        const lat = locLatInput.value, lon = locLonInput.value, h = locHeightInput.value;
         if (!lat || !lon) return alert("Please set your Local Site coordinates first.");
-
-        // Create a URL where YOUR local coordinates become THEIR remote coordinates
         const url = new URL(window.location.href.split('?')[0]); 
-        url.searchParams.set('remLat', lat);
-        url.searchParams.set('remLon', lon);
-        url.searchParams.set('remHeight', h);
-
-        const shareData = {
-            title: 'Antenna Alignment Target',
-            text: 'Here are my coordinates for the antenna alignment.',
-            url: url.toString()
-        };
-
-        if (navigator.share) {
-            try {
-                await navigator.share(shareData);
-            } catch (err) {
-                console.log("User cancelled share or error:", err);
-            }
-        } else {
-            // Fallback for desktop or browsers that don't support native sharing
-            navigator.clipboard.writeText(url.toString());
-            alert("Link copied to clipboard!\n\nPaste this link to your colleague.");
-        }
+        url.searchParams.set('remLat', lat); url.searchParams.set('remLon', lon); url.searchParams.set('remHeight', h);
+        if (navigator.share) { try { await navigator.share({title: 'Antenna Target', url: url.toString()}); } catch(e){} } 
+        else { navigator.clipboard.writeText(url.toString()); alert("Link copied!"); }
     });
 
-    // --- PARSE INCOMING LINK LOGIC ---
     function checkIncomingSharedLink() {
         const params = new URLSearchParams(window.location.search);
-        let loadedFromLink = false;
-        
+        let loaded = false;
         if (params.has('remLat') && params.has('remLon')) {
-            remLatInput.value = params.get('remLat');
-            remLonInput.value = params.get('remLon');
+            remLatInput.value = params.get('remLat'); remLonInput.value = params.get('remLon');
             if (params.has('remHeight')) remHeightInput.value = params.get('remHeight');
-            
-            const rLat = parseFloat(params.get('remLat'));
-            const rLon = parseFloat(params.get('remLon'));
-            remoteMarker.setLatLng([rLat, rLon]);
-            loadedFromLink = true;
-
-            // Strip parameters from URL so refreshing doesn't keep overriding
-            window.history.replaceState({}, document.title, window.location.pathname);
+            remoteMarker.setLatLng([parseFloat(params.get('remLat')), parseFloat(params.get('remLon'))]);
+            loaded = true; window.history.replaceState({}, document.title, window.location.pathname);
         }
-        return loadedFromLink;
+        return loaded;
     }
 
     function calculateAlignment() {
         const p1 = localMarker.getLatLng(), p2 = remoteMarker.getLatLng();
         const h1 = parseFloat(locHeightInput.value) || 0, h2 = parseFloat(remHeightInput.value) || 0;
 
-        localStorage.setItem('antennaAlignData', JSON.stringify({ locLat: p1.lat, locLon: p1.lng, remLat: p2.lat, remLon: p2.lng, locHeight: h1, remHeight: h2, errorMargin: errorMarginInput.value }));
+        localStorage.setItem('antennaAlignData', JSON.stringify({ locLat: p1.lat, locLon: p1.lng, remLat: p2.lat, remLon: p2.lng, locHeight: h1, remHeight: h2, errorMargin: errorMarginInput.value, magDec: magDecInput.value }));
 
         const R = 6371e3, φ1 = p1.lat * Math.PI/180, φ2 = p2.lat * Math.PI/180;
         const Δφ = (p2.lat-p1.lat) * Math.PI/180, Δλ = (p2.lng-p1.lng) * Math.PI/180;
@@ -234,48 +196,28 @@
         const Re = (4/3) * R;
         targetTilt = Math.atan2((h2 - h1) - ((distanceMeters * distanceMeters) / (2 * Re)), distanceMeters) * 180 / Math.PI;
 
-        document.getElementById('calcResults').innerHTML = `Target Bearing: ${targetBearing.toFixed(1)}°<br>Distance: ${(distanceMeters/1000).toFixed(2)} km<br>Target Tilt: ${targetTilt.toFixed(1)}°`;
+        document.getElementById('calcResults').innerHTML = `Target Bearing: ${targetBearing.toFixed(1)}° (True)<br>Distance: ${(distanceMeters/1000).toFixed(2)} km<br>Target Tilt: ${targetTilt.toFixed(1)}°`;
         document.getElementById('tgt-b').innerText = targetBearing.toFixed(1); document.getElementById('tgt-t').innerText = targetTilt.toFixed(1);
     }
 
     window.onload = () => {
-        // 1. Check if we arrived via a shared link
         const loadedFromLink = checkIncomingSharedLink();
-
-        // 2. Load Local Storage
-        try { 
-            const d = JSON.parse(localStorage.getItem('antennaAlignData'));
-            if (d) { 
-                if(d.locLat){localMarker.setLatLng([d.locLat, d.locLon]); map.setView([d.locLat, d.locLon], 10);}
-                if(d.locHeight)locHeightInput.value = d.locHeight;
-                if(d.errorMargin)errorMarginInput.value = d.errorMargin; 
-                
-                // Only load remote from storage if we DIDN'T just receive a shared link
-                if(!loadedFromLink) {
-                    if(d.remLat)remoteMarker.setLatLng([d.remLat, d.remLon]); 
-                    if(d.remHeight)remHeightInput.value = d.remHeight;
-                }
-            }
-        } catch(e){} 
-
-        syncMapToInputs();
-
-        // If we loaded a shared link, zoom out to show both the local and remote sites
-        if(loadedFromLink) {
-            const bounds = L.latLngBounds(localMarker.getLatLng(), remoteMarker.getLatLng());
-            map.fitBounds(bounds.pad(0.1));
-            alert("Received remote site coordinates!");
-        }
+        try { const d = JSON.parse(localStorage.getItem('antennaAlignData'));
+            if (d) { if(d.locLat){localMarker.setLatLng([d.locLat, d.locLon]); map.setView([d.locLat, d.locLon], 10);}
+                if(d.locHeight)locHeightInput.value = d.locHeight; if(d.errorMargin)errorMarginInput.value = d.errorMargin; if(d.magDec)magDecInput.value = d.magDec;
+                if(!loadedFromLink) { if(d.remLat)remoteMarker.setLatLng([d.remLat, d.remLon]); if(d.remHeight)remHeightInput.value = d.remHeight; } }
+        } catch(e){} syncMapToInputs();
+        if(loadedFromLink) { map.fitBounds(L.latLngBounds(localMarker.getLatLng(), remoteMarker.getLatLng()).pad(0.1)); }
     };
 
-    // --- AR / CAMERA LOGIC ---
+    // --- 3D AR / CAMERA LOGIC ---
     const btnAlign = document.getElementById('btn-align'), arView = document.getElementById('ar-view'), closeAr = document.getElementById('close-ar'), video = document.getElementById('camera-stream'), crosshair = document.getElementById('crosshair');
     let stream = null;
+    let compassOffset = 0; // Anchors the 3D Math to the real world
 
     btnAlign.addEventListener('click', async () => {
         arView.style.display = 'block';
         requestOrientationPermission();
-
         try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); video.srcObject = stream;
             const t = stream.getVideoTracks()[0]; if (t.getCapabilities().zoom) await t.applyConstraints({ advanced: [{ zoom: t.getCapabilities().zoom.max }] });
         } catch (err) { alert("Camera error: " + err.message); }
@@ -289,11 +231,7 @@
     function requestOrientationPermission() {
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             DeviceOrientationEvent.requestPermission().then(state => { 
-                if (state === 'granted') {
-                    window.addEventListener('deviceorientation', handleOrientation, true); 
-                } else {
-                    alert("Orientation permission denied. Please allow it in settings.");
-                }
+                if (state === 'granted') { window.addEventListener('deviceorientation', handleOrientation, true); } 
             }).catch(console.error);
         } else { 
             window.addEventListener('deviceorientationabsolute', handleOrientation, true); 
@@ -301,47 +239,59 @@
         }
     }
 
-    function getScreenAngle() {
-        let angle = 0;
-        if (screen.orientation && typeof screen.orientation.angle === 'number') { angle = screen.orientation.angle; } 
-        else if (typeof window.orientation === 'number') { angle = window.orientation; }
-        return (angle + 360) % 360; 
-    }
-
     function handleOrientation(event) {
-        let angle = getScreenAngle();
-        let actualBearing = 0, actualTilt = 0;
-        
+        // 1. Convert Euler angles to radians
+        const d2r = Math.PI / 180;
+        const a = (event.alpha || 0) * d2r;
+        const b = (event.beta || 0) * d2r;
+        const g = (event.gamma || 0) * d2r;
+
+        // 2. Precompute for 3D Matrix
+        const cA = Math.cos(a), sA = Math.sin(a);
+        const cB = Math.cos(b), sB = Math.sin(b);
+        const cG = Math.cos(g), sG = Math.sin(g);
+
+        // 3. Anchor to Magnetic North
+        // We calculate the offset between the top of the phone (+Y) and the iOS compass.
+        // We only update this anchor when the phone is held relatively flat (pitch < 45 deg)
+        // to avoid the exact Gimbal Lock instability at 90 degrees!
         let heading = event.webkitCompassHeading;
-        if (heading == null && event.alpha != null) heading = 360 - event.alpha;
-        let beta = event.beta || 0;
-        let gamma = event.gamma || 0;
-
-        document.getElementById('dbg-head').innerText = (heading || 0).toFixed(1);
-        document.getElementById('dbg-beta').innerText = beta.toFixed(1);
-        document.getElementById('dbg-gamma').innerText = gamma.toFixed(1);
-        document.getElementById('dbg-angle').innerText = angle;
-
-        if (heading == null) return;
-
-        actualBearing = (heading + angle + 360) % 360;
-
-        if (angle === 0) { // Portrait
-            actualTilt = 90 - beta;
-        } else if (angle === 90) { // Landscape Left
-            actualTilt = gamma + 90; 
-        } else if (angle === 270 || angle === -90) { // Landscape Right
-            actualTilt = 90 - gamma; 
-        } else if (angle === 180) { // Portrait Upside Down
-            actualTilt = beta + 90;
+        if (heading != null) {
+            // Unanchored Earth projection of the top of the phone (+Y axis)
+            const yX = -sA * cB;
+            const yY = cA * cB;
+            let unanchoredYHeading = Math.atan2(yX, yY) / d2r;
+            
+            if (Math.abs(event.beta) < 45) {
+                compassOffset = heading - unanchoredYHeading;
+                document.getElementById('dbg-cal').innerText = "Yes (Locked)";
+                document.getElementById('dbg-cal').style.color = "#0f0";
+            }
         }
 
-        document.getElementById('act-b').innerText = actualBearing.toFixed(1);
-        document.getElementById('act-t').innerText = actualTilt.toFixed(1);
+        // 4. Calculate 3D Vector of the physical Camera Lens (Negative Z-axis)
+        // This math tracks the physical lens and is completely immune to Euler gimbal lock
+        const vX = -cA * sG - sA * sB * cG;
+        const vY = -sA * sG + cA * sB * cG;
+        const vZ = -cB * cG;
+
+        // Unanchored heading of the camera lens
+        let unanchoredCameraHeading = Math.atan2(vX, vY) / d2r;
+
+        // Apply our locked compass offset, plus the user's Magnetic Declination (True North adjustment)
+        const declination = parseFloat(magDecInput.value) || 0;
+        let finalBearing = (unanchoredCameraHeading + compassOffset + declination + 360) % 360;
+
+        // Camera Tilt relative to Earth Horizon (0 = flat, Positive = looking at sky)
+        let finalTilt = Math.asin(vZ) / d2r;
+
+        // Update UI
+        document.getElementById('act-b').innerText = finalBearing.toFixed(1);
+        document.getElementById('act-t').innerText = finalTilt.toFixed(1);
 
         const margin = parseFloat(errorMarginInput.value) || 1;
-        let bDiff = Math.abs(actualBearing - targetBearing); bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
-        let tDiff = Math.abs(actualTilt - targetTilt);
+        let bDiff = Math.abs(finalBearing - targetBearing); bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
+        let tDiff = Math.abs(finalTilt - targetTilt);
 
         if (bDiff <= margin && tDiff <= margin) crosshair.classList.add('aligned'); else crosshair.classList.remove('aligned');
     }
