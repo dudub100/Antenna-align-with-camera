@@ -239,6 +239,9 @@
         }
     }
 
+    let compassOffset = 0;
+    let isCalibrated = false;
+
     function handleOrientation(event) {
         // 1. Convert Euler angles to radians
         const d2r = Math.PI / 180;
@@ -252,22 +255,63 @@
         const cG = Math.cos(g), sG = Math.sin(g);
 
         // 3. Anchor to Magnetic North
-        // We calculate the offset between the top of the phone (+Y) and the iOS compass.
-        // We only update this anchor when the phone is held relatively flat (pitch < 45 deg)
-        // to avoid the exact Gimbal Lock instability at 90 degrees!
         let heading = event.webkitCompassHeading;
         if (heading != null) {
-            // Unanchored Earth projection of the top of the phone (+Y axis)
-            const yX = -sA * cB;
-            const yY = cA * cB;
-            let unanchoredYHeading = Math.atan2(yX, yY) / d2r;
-            
-            if (Math.abs(event.beta) < 45) {
-                compassOffset = heading - unanchoredYHeading;
-                document.getElementById('dbg-cal').innerText = "Yes (Locked)";
-                document.getElementById('dbg-cal').style.color = "#0f0";
+            // FIXED: Increased threshold from 45 to 85 degrees.
+            // This allows the app to calibrate naturally as you hold the phone,
+            // only freezing the offset right before the vertical Gimbal Lock zone.
+            if (Math.abs(event.beta) < 85) {
+                const yX = -sA * cB;
+                const yY = cA * cB;
+                let unanchoredYHeading = Math.atan2(yX, yY) / d2r;
+                
+                // Calculate the difference and wrap it cleanly to avoid 360 jumps
+                let diff = heading - unanchoredYHeading;
+                compassOffset = ((diff + 540) % 360) - 180;
+                isCalibrated = true;
             }
+        } else if (event.alpha != null) {
+            // Fallback for Android (which already gives absolute true headings)
+            compassOffset = 0;
+            isCalibrated = true;
         }
+
+        // 4. Calculate 3D Vector of the physical Camera Lens (Negative Z-axis)
+        // This math seamlessly handles portrait, landscape, and rolling.
+        const vX = -cA * sG - sA * sB * cG;
+        const vY = -sA * sG + cA * sB * cG;
+        const vZ = -cB * cG;
+
+        let unanchoredCameraHeading = Math.atan2(vX, vY) / d2r;
+
+        // Apply our locked compass offset, plus the user's Magnetic Declination (True North adjustment)
+        const declination = parseFloat(document.getElementById('magDec').value) || 0;
+        let finalBearing = (unanchoredCameraHeading + compassOffset + declination + 360) % 360;
+
+        // Camera Tilt relative to Earth Horizon (0 = flat, Positive = looking at sky)
+        let finalTilt = Math.asin(vZ) / d2r;
+
+        // Update UI
+        document.getElementById('act-b').innerText = finalBearing.toFixed(1);
+        document.getElementById('act-t').innerText = finalTilt.toFixed(1);
+
+        if (isCalibrated) {
+            document.getElementById('dbg-cal').innerText = "Yes (Locked & Tracking)";
+            document.getElementById('dbg-cal').style.color = "#0f0";
+        }
+
+        // Check against targets
+        const margin = parseFloat(document.getElementById('errorMargin').value) || 1;
+        let bDiff = Math.abs(finalBearing - targetBearing);
+        bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
+        let tDiff = Math.abs(finalTilt - targetTilt);
+
+        if (bDiff <= margin && tDiff <= margin) {
+            crosshair.classList.add('aligned');
+        } else {
+            crosshair.classList.remove('aligned');
+        }
+    }
 
         // 4. Calculate 3D Vector of the physical Camera Lens (Negative Z-axis)
         // This math tracks the physical lens and is completely immune to Euler gimbal lock
