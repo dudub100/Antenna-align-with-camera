@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Antenna Alignment Tool (3D Spatial)</title>
+    <title>Antenna Alignment Tool</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -99,7 +99,7 @@
     </div>
 
     <div id="debug-panel">
-        Camera Calibrated: <span id="dbg-cal">No (Hold Flat)</span>
+        Camera Calibrated: <span id="dbg-cal">No (Hold phone normally)</span>
     </div>
     
     <div class="crosshair" id="crosshair"></div>
@@ -210,10 +210,9 @@
         if(loadedFromLink) { map.fitBounds(L.latLngBounds(localMarker.getLatLng(), remoteMarker.getLatLng()).pad(0.1)); }
     };
 
-    // --- 3D AR / CAMERA LOGIC ---
+    // --- AR / CAMERA / 3D SPATIAL LOGIC ---
     const btnAlign = document.getElementById('btn-align'), arView = document.getElementById('ar-view'), closeAr = document.getElementById('close-ar'), video = document.getElementById('camera-stream'), crosshair = document.getElementById('crosshair');
     let stream = null;
-    let compassOffset = 0; // Anchors the 3D Math to the real world
 
     btnAlign.addEventListener('click', async () => {
         arView.style.display = 'block';
@@ -254,41 +253,36 @@
         const cB = Math.cos(b), sB = Math.sin(b);
         const cG = Math.cos(g), sG = Math.sin(g);
 
-        // 3. Anchor to Magnetic North
+        // 3. Anchor to Magnetic North (Triggers safely below 85 degrees pitch)
         let heading = event.webkitCompassHeading;
         if (heading != null) {
-            // FIXED: Increased threshold from 45 to 85 degrees.
-            // This allows the app to calibrate naturally as you hold the phone,
-            // only freezing the offset right before the vertical Gimbal Lock zone.
             if (Math.abs(event.beta) < 85) {
                 const yX = -sA * cB;
                 const yY = cA * cB;
                 let unanchoredYHeading = Math.atan2(yX, yY) / d2r;
                 
-                // Calculate the difference and wrap it cleanly to avoid 360 jumps
                 let diff = heading - unanchoredYHeading;
                 compassOffset = ((diff + 540) % 360) - 180;
                 isCalibrated = true;
             }
         } else if (event.alpha != null) {
-            // Fallback for Android (which already gives absolute true headings)
+            // Android fallback
             compassOffset = 0;
             isCalibrated = true;
         }
 
         // 4. Calculate 3D Vector of the physical Camera Lens (Negative Z-axis)
-        // This math seamlessly handles portrait, landscape, and rolling.
         const vX = -cA * sG - sA * sB * cG;
         const vY = -sA * sG + cA * sB * cG;
         const vZ = -cB * cG;
 
         let unanchoredCameraHeading = Math.atan2(vX, vY) / d2r;
 
-        // Apply our locked compass offset, plus the user's Magnetic Declination (True North adjustment)
-        const declination = parseFloat(document.getElementById('magDec').value) || 0;
+        // Apply locked compass offset, plus Magnetic Declination
+        const declination = parseFloat(magDecInput.value) || 0;
         let finalBearing = (unanchoredCameraHeading + compassOffset + declination + 360) % 360;
 
-        // Camera Tilt relative to Earth Horizon (0 = flat, Positive = looking at sky)
+        // Camera Tilt relative to Earth Horizon
         let finalTilt = Math.asin(vZ) / d2r;
 
         // Update UI
@@ -301,7 +295,7 @@
         }
 
         // Check against targets
-        const margin = parseFloat(document.getElementById('errorMargin').value) || 1;
+        const margin = parseFloat(errorMarginInput.value) || 1;
         let bDiff = Math.abs(finalBearing - targetBearing);
         bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
         let tDiff = Math.abs(finalTilt - targetTilt);
@@ -311,33 +305,6 @@
         } else {
             crosshair.classList.remove('aligned');
         }
-    }
-
-        // 4. Calculate 3D Vector of the physical Camera Lens (Negative Z-axis)
-        // This math tracks the physical lens and is completely immune to Euler gimbal lock
-        const vX = -cA * sG - sA * sB * cG;
-        const vY = -sA * sG + cA * sB * cG;
-        const vZ = -cB * cG;
-
-        // Unanchored heading of the camera lens
-        let unanchoredCameraHeading = Math.atan2(vX, vY) / d2r;
-
-        // Apply our locked compass offset, plus the user's Magnetic Declination (True North adjustment)
-        const declination = parseFloat(magDecInput.value) || 0;
-        let finalBearing = (unanchoredCameraHeading + compassOffset + declination + 360) % 360;
-
-        // Camera Tilt relative to Earth Horizon (0 = flat, Positive = looking at sky)
-        let finalTilt = Math.asin(vZ) / d2r;
-
-        // Update UI
-        document.getElementById('act-b').innerText = finalBearing.toFixed(1);
-        document.getElementById('act-t').innerText = finalTilt.toFixed(1);
-
-        const margin = parseFloat(errorMarginInput.value) || 1;
-        let bDiff = Math.abs(finalBearing - targetBearing); bDiff = bDiff > 180 ? 360 - bDiff : bDiff;
-        let tDiff = Math.abs(finalTilt - targetTilt);
-
-        if (bDiff <= margin && tDiff <= margin) crosshair.classList.add('aligned'); else crosshair.classList.remove('aligned');
     }
 </script>
 
